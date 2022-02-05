@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package benchmark;
+
+service Benchmark {
+  rpc SendDataStreamFullDuplex(stream Data) returns (stream Ack) {}
+}
+
+message Data {
+  bytes data = 1;
+}
+
+message Ack {
+}
