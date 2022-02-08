@@ -75,6 +75,8 @@ public:
         for (int i = 0; i < num_threads_; i++)
             cqs_.push_back(new CompletionQueue());
 
+        stat_thread_ = std::thread(&BenchmarkClient::PollStats, this);
+
         polling_threads_.reserve(num_threads_);
         for (int id = 0; id < num_threads_; id++)
         {
@@ -90,6 +92,36 @@ public:
 
         for (int i = 0; i < num_threads_; i++)
             polling_threads_[i].join();
+        stat_thread_.join();
+    }
+
+    void PollStats()
+    {
+        auto start = std::chrono::system_clock::now();
+        while (true)
+        {
+            sleep(1);
+
+            auto end = std::chrono::system_clock::now();
+            std::chrono::duration<double> seconds = end - start;
+            double duration = seconds.count();
+
+            long rx_cnt_acc = 0, tx_cnt_acc = 0;
+            for (int i = 0; i < num_threads_; i++)
+            {
+                rx_cnt_acc += stats_[i].rx_cnt;
+                tx_cnt_acc += stats_[i].tx_cnt;
+                stats_[i].rx_cnt = 0;
+                stats_[i].tx_cnt = 0;
+            }
+            double rx_gbps = 8.0 * rx_cnt_acc * 4 / duration / 1e9;
+            double tx_gbps = 8.0 * tx_cnt_acc * payload_size_ / duration / 1e9;
+            double rx_rps = rx_cnt_acc / duration;
+            double tx_rps = tx_cnt_acc / duration;
+            printf("%.6lf,\t %.6lf,\t %.1lf,\t %.1lf\n",
+                   rx_gbps, tx_gbps, rx_rps, tx_rps);
+            start = std::chrono::system_clock::now();
+        }
     }
 
     void PollCompletionQueue(int id, const std::string &str)
@@ -102,12 +134,10 @@ public:
         long packets_to_report = oneg / payload_size_;
         long packets_to_report_100m = onehm / payload_size_;
 
-        int total_cnt = 0, record_period = 10;
         Stat &stat = stats_[id];
         stat.rx_cnt = 0;
         stat.tx_cnt = 0;
 
-        auto start = std::chrono::system_clock::now();
         if (id == 0)
             printf("rx_gbps,\t tx_gbps,\t rx_rps,\t tx_rps\n");
 
@@ -131,7 +161,6 @@ public:
                 call->stream->Write(d, (void *)call);
                 stat.tx_cnt++;
                 call->count++;
-                total_cnt++;
                 continue;
             }
 
@@ -156,32 +185,6 @@ public:
                 call->stream->Finish(&call->status, (void *)call);
                 call->finished = true;
                 continue;
-            }
-
-            if (id == 0 && total_cnt >= record_period)
-            {
-                auto end = std::chrono::system_clock::now();
-                std::chrono::duration<double> seconds = end - start;
-                double duration = seconds.count();
-                if (duration >= 1)
-                {
-                    long rx_cnt_acc = 0, tx_cnt_acc = 0;
-                    for (int i = 0; i < num_threads_; i++)
-                    {
-                        rx_cnt_acc += stats_[i].rx_cnt;
-                        tx_cnt_acc += stats_[i].tx_cnt;
-                        stats_[i].rx_cnt = 0;
-                        stats_[i].tx_cnt = 0;
-                    }
-                    double rx_gbps = 8.0 * rx_cnt_acc * 4 / duration / 1e9;
-                    double tx_gbps = 8.0 * tx_cnt_acc * payload_size_ / duration / 1e9;
-                    double rx_rps = rx_cnt_acc / duration;
-                    double tx_rps = tx_cnt_acc / duration;
-                    printf("%.6lf,\t %.6lf,\t %.1lf,\t %.1lf\n",
-                           rx_gbps, tx_gbps, rx_rps, tx_rps);
-                    start = std::chrono::system_clock::now();
-                }
-                total_cnt = 0;
             }
 
             if (call_per_req_ > 0)
