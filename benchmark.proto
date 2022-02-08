@@ -6,9 +6,6 @@ service Benchmark {
   rpc SendDataStreamFullDuplex(stream Data) returns (stream Ack) {}
 }
 
-message Data {
-  bytes data = 1;
-}
+message Data { bytes data = 1; }
 
-message Ack {
-}
+message Ack { bytes data = 1; }

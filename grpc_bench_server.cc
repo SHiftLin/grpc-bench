@@ -71,6 +71,7 @@ private:
         HandleRPC(Benchmark::AsyncService *service, ServerCompletionQueue *cq)
             : service_(service), cq_(cq), stream_(&ctx_), status_(CREATE)
         {
+            ack_.set_data(std::string(4, 'b'));
             P(nullptr, true);
         }
 

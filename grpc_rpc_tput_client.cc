@@ -7,7 +7,7 @@
 #include <string>
 #include <thread>
 #include <unistd.h>
-#include <mutex>
+#include <atomic>
 
 #include "benchmark.grpc.pb.h"
 
@@ -49,16 +49,16 @@ public:
 
         payload_size_ = payload_size;
 
+        stats_ = std::vector<Stat>(num_threads_);
+        for (int i = 0; i < num_threads_; i++)
+            cqs_.push_back(new CompletionQueue());
+
         polling_threads_.reserve(num_threads_);
         for (int i = 0; i < num_threads_; i++)
         {
-            cqs_.push_back(new CompletionQueue());
-            // cnts_.push_back({0, 0});
-        }
-
-        for (int i = 0; i < num_threads_; i++)
             polling_threads_.emplace_back(&BenchmarkClient::PollCompletionQueue, this,
                                           i, str);
+        }
 
         for (int id = 0; id < num_threads_; id++)
         {
@@ -89,9 +89,13 @@ public:
         long packets_to_report_100m = onehm / payload_size_;
 
         int count = 0, record_period = 100;
-        long tx_cnt = 0, rx_cnt = 0;
+        Stat &stat = stats_[id];
+        stat.rx_cnt = 0;
+        stat.tx_cnt = 0;
 
         auto start = std::chrono::system_clock::now();
+        if (id == 0)
+            printf("rx_gbps,\t tx_gbps,\t rx_rps,\t tx_rps\n");
 
         while (cqs_[id]->Next(&tag, &ok))
         {
@@ -112,16 +116,20 @@ public:
                 d.set_data(str);
                 call->writing = false;
                 call->stream->Write(d, (void *)call);
-                tx_cnt++;
+                stat.tx_cnt++;
             }
             else
             {
                 call->writing = true;
                 call->stream->Read(&call->ack, (void *)call);
-                rx_cnt++;
+                stat.rx_cnt++;
             }
 
+            if (id > 0)
+                continue;
+
             count++;
+            // std::cout << count << std::endl;
             if (count >= record_period)
             {
                 auto end = std::chrono::system_clock::now();
@@ -129,19 +137,21 @@ public:
                 double duration = seconds.count();
                 if (duration >= 1)
                 {
-                    double rx_gbps = 8.0 * rx_cnt * payload_size_ / duration / 1e9;
-                    double tx_gbps = 8.0 * tx_cnt * payload_size_ / duration / 1e9;
-                    double rx_rps = rx_cnt / duration;
-                    double tx_rps = tx_cnt / duration;
-                    printf("%d,\t %.6lf,\t %.6lf,\t %.1lf,\t %.1lf\n",
-                           id, rx_gbps, tx_gbps, rx_rps, tx_rps);
-                    // std::cout << "id: " << id << std::endl;
-                    // std::cout << "rx_Gbps: " << rx_gbps << " Gbps" << std::endl;
-                    // std::cout << "tx_Gbps: " << tx_gbps << " Gbps" << std::endl;
-                    // std::cout << "rx_rps: " << rx_rps << std::endl;
-                    // std::cout << "tx_rps: " << tx_rps << std::endl;
+                    long rx_cnt_acc = 0, tx_cnt_acc = 0;
+                    for (int i = 0; i < num_threads_; i++)
+                    {
+                        rx_cnt_acc += stats_[i].rx_cnt;
+                        tx_cnt_acc += stats_[i].tx_cnt;
+                        stats_[i].rx_cnt = 0;
+                        stats_[i].tx_cnt = 0;
+                    }
+                    double rx_gbps = 8.0 * rx_cnt_acc * payload_size_ / duration / 1e9;
+                    double tx_gbps = 8.0 * tx_cnt_acc * payload_size_ / duration / 1e9;
+                    double rx_rps = rx_cnt_acc / duration;
+                    double tx_rps = tx_cnt_acc / duration;
+                    printf("%.6lf,\t %.6lf,\t %.1lf,\t %.1lf\n",
+                           rx_gbps, tx_gbps, rx_rps, tx_rps);
                     start = std::chrono::system_clock::now();
-                    rx_cnt = tx_cnt = 0;
                 }
                 count = 0;
             }
@@ -168,28 +178,12 @@ private:
 
     struct Stat
     {
-        double rx_gbps, tx_gbps, rx_rps, tx_rps;
-
-        Stat()
-        {
-            rx_gbps = tx_gbps = rx_rps = tx_rps = 0;
-        }
+        std::atomic<long> rx_cnt, tx_cnt;
     };
-
-    // struct Stat
-    // {
-    //     double rx_cnt,tx_cnt;
-
-    //     Stat()
-    //     {
-    //         rx_gbps = tx_gbps = rx_rps = tx_rps = 0;
-    //     }
-    // };
 
     int num_threads_;
     int payload_size_;
-    // Stat acc;
-    // std::vector<pair<size_t, size_t>> cnts_;
+    std::vector<Stat> stats_;
     // std::mutex mtx;
 
     std::vector<std::unique_ptr<Benchmark::Stub>> stubs_;
