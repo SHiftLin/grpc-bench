@@ -76,10 +76,10 @@ public:
             cqs_.push_back(new CompletionQueue());
 
         polling_threads_.reserve(num_threads_);
-        for (int i = 0; i < num_threads_; i++)
+        for (int id = 0; id < num_threads_; id++)
         {
             polling_threads_.emplace_back(&BenchmarkClient::PollCompletionQueue, this,
-                                          i, str);
+                                          id, str);
         }
 
         for (int id = 0; id < num_threads_; id++)
@@ -102,7 +102,7 @@ public:
         long packets_to_report = oneg / payload_size_;
         long packets_to_report_100m = onehm / payload_size_;
 
-        int total_cnt = 0, record_period = 100;
+        int total_cnt = 0, record_period = 10;
         Stat &stat = stats_[id];
         stat.rx_cnt = 0;
         stat.tx_cnt = 0;
@@ -114,20 +114,14 @@ public:
         while (cqs_[id]->Next(&tag, &ok))
         {
             AsyncClientCall *call = static_cast<AsyncClientCall *>(tag);
-            if (not ok)
-            {
-                std::cout << "call " << call << std::endl;
-                std::cout << "total_cnt " << total_cnt << std::endl;
-                std::cout << "sendfinished " << call->sendfinished << std::endl;
-                std::cout << "finished " << call->finished << std::endl;
-            }
 
-            GPR_ASSERT(ok);
-            // if (GPR_UNLIKELY(!ok))
-            // {
-            //     delete call;
-            //     continue;
-            // }
+            // GPR_ASSERT(ok);
+            if (GPR_UNLIKELY(!ok))
+            {
+                delete call;
+                AsyncClientCall *call = new AsyncClientCall(stubs_[id], cqs_[id]);
+                continue;
+            }
 
             if ((call_per_req_ <= 0 || call->count < call_per_req_) && call->writing == true)
             {
@@ -243,6 +237,7 @@ private:
     std::vector<std::unique_ptr<Benchmark::Stub>> stubs_;
     std::vector<CompletionQueue *> cqs_;
     std::vector<std::thread> polling_threads_;
+    std::thread stat_thread_;
 };
 
 int main(int argc, char **argv)
