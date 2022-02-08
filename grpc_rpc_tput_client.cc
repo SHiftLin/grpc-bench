@@ -8,6 +8,7 @@
 #include <thread>
 #include <unistd.h>
 #include <atomic>
+#include <signal.h>
 
 #include "benchmark.grpc.pb.h"
 
@@ -20,6 +21,8 @@ using grpc::Status;
 using benchmark::Ack;
 using benchmark::Benchmark;
 using benchmark::Data;
+
+long overlimit = 0;
 
 class Params
 {
@@ -148,6 +151,7 @@ public:
             // GPR_ASSERT(ok);
             if (GPR_UNLIKELY(!ok))
             {
+                overlimit += 1;
                 delete call;
                 AsyncClientCall *call = new AsyncClientCall(stubs_[id], cqs_[id]);
                 continue;
@@ -243,6 +247,12 @@ private:
     std::thread stat_thread_;
 };
 
+void sigint_handler(int sig)
+{
+    std::cout << "overlimit: " << overlimit << std::endl;
+    exit(0);
+}
+
 int main(int argc, char **argv)
 {
     Params params;
@@ -281,6 +291,7 @@ int main(int argc, char **argv)
 
     BenchmarkClient client(params);
 
+    signal(SIGINT, sigint_handler);
     client.Run(a, params);
 
     return 0;
