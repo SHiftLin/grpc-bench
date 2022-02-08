@@ -80,6 +80,7 @@ private:
             if (status_ == CREATE)
             {
                 status_ = PROCESS;
+                // printf("create\n");
                 service_->RequestSendDataStreamFullDuplex(&ctx_, &stream_, cq_, cq_, this);
             }
             else if (status_ == PROCESS)
@@ -96,6 +97,7 @@ private:
                 {
                     status_ = PROCESSING_WRITE;
                     stream_.Write(ack_, this);
+                    // printf("write response\n");
                 }
                 else
                 {
@@ -109,6 +111,7 @@ private:
                 {
                     status_ = PROCESSING_READ;
                     stream_.Read(&data_, this);
+                    // printf("read request\n");
                 }
                 else
                 {
@@ -118,6 +121,7 @@ private:
             }
             else
             {
+                // printf("finished\n");
                 GPR_ASSERT(status_ == FINISH);
                 delete this;
             }
