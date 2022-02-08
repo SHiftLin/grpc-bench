@@ -85,17 +85,7 @@ public:
         for (int id = 0; id < num_threads_; id++)
         {
             for (int i = 0; i < params.concurrency; i++)
-            {
-                // AsyncClientCall *call = new AsyncClientCall(stubs_[id], cqs_[id]);
-                AsyncClientCall *call = new AsyncClientCall;
-                call->stream = stubs_[id]->PrepareAsyncSendDataStreamFullDuplex(
-                    &call->context, cqs_[id]);
-                call->stream->StartCall((void *)call);
-                call->sendfinished = false;
-                call->finished = false;
-                call->writing = true;
-                call->count = 0;
-            }
+                AsyncClientCall *call = new AsyncClientCall(stubs_[id], cqs_[id]);
         }
 
         for (int i = 0; i < num_threads_; i++)
@@ -139,7 +129,7 @@ public:
             //     continue;
             // }
 
-            if ((call->count < call_per_req_ || call_per_req_ <= 0) && call->writing == true)
+            if ((call_per_req_ <= 0 || call->count < call_per_req_) && call->writing == true)
             {
                 Data d;
                 d.set_data(str);
@@ -151,7 +141,7 @@ public:
                 continue;
             }
 
-            if ((call->count <= call_per_req_ || call_per_req_ <= 0) && call->writing == false)
+            if ((call_per_req_ <= 0 || call->count <= call_per_req_) && call->writing == false)
             {
                 call->writing = true;
                 call->stream->Read(&call->ack, (void *)call);
@@ -160,19 +150,19 @@ public:
                     continue;
             }
 
-            // if (call_per_req_ > 0 && !call->sendfinished)
-            // {
-            //     call->stream->WritesDone((void *)call);
-            //     call->sendfinished = true;
-            //     continue;
-            // }
+            if (call_per_req_ > 0 && !call->sendfinished)
+            {
+                call->stream->WritesDone((void *)call);
+                call->sendfinished = true;
+                continue;
+            }
 
-            // if (call_per_req_ > 0 && !call->finished)
-            // {
-            //     call->stream->Finish(&call->status, (void *)call);
-            //     call->finished = true;
-            //     continue;
-            // }
+            if (call_per_req_ > 0 && !call->finished)
+            {
+                call->stream->Finish(&call->status, (void *)call);
+                call->finished = true;
+                continue;
+            }
 
             if (id == 0 && total_cnt >= record_period)
             {
@@ -200,19 +190,11 @@ public:
                 total_cnt = 0;
             }
 
-            // if (call_per_req_ > 0)
-            // {
-            //     delete call;
-            //     // AsyncClientCall *call = new AsyncClientCall(stubs_[id], cqs_[id]);
-            //     AsyncClientCall *call = new AsyncClientCall;
-            //     call->stream = stubs_[id]->PrepareAsyncSendDataStreamFullDuplex(
-            //         &call->context, cqs_[id]);
-            //     call->stream->StartCall((void *)call);
-            //     call->sendfinished = false;
-            //     call->finished = false;
-            //     call->writing = true;
-            //     call->count = 0;
-            // }
+            if (call_per_req_ > 0)
+            {
+                delete call;
+                AsyncClientCall *call = new AsyncClientCall(stubs_[id], cqs_[id]);
+            }
         }
     }
 
@@ -234,18 +216,18 @@ private:
         bool finished;
         bool writing;
 
-        AsyncClientCall() = default;
+        // AsyncClientCall() = default;
 
-        // AsyncClientCall(const std::unique_ptr<Benchmark::Stub> &stub_, CompletionQueue *cq_)
-        // {
-        //     this->stream = stub_->PrepareAsyncSendDataStreamFullDuplex(
-        //         &this->context, cq_);
-        //     this->stream->StartCall((void *)this);
-        //     this->sendfinished = false;
-        //     this->finished = false;
-        //     this->writing = true;
-        //     this->count = 0;
-        // }
+        AsyncClientCall(const std::unique_ptr<Benchmark::Stub> &stub_, CompletionQueue *cq_)
+        {
+            this->stream = stub_->PrepareAsyncSendDataStreamFullDuplex(
+                &this->context, cq_);
+            this->stream->StartCall((void *)this);
+            this->sendfinished = false;
+            this->finished = false;
+            this->writing = true;
+            this->count = 0;
+        }
     };
 
     struct Stat
