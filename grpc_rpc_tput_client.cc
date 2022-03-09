@@ -11,6 +11,7 @@
 #include <signal.h>
 
 #include "benchmark.grpc.pb.h"
+#include "benchmark.pb.h"
 
 using grpc::Channel;
 using grpc::ClientAsyncReaderWriter;
@@ -88,10 +89,8 @@ public:
         }
 
         for (int id = 0; id < num_threads_; id++)
-        {
             for (int i = 0; i < params.concurrency; i++)
-                AsyncClientCall *call = new AsyncClientCall(stubs_[id], cqs_[id]);
-        }
+                new AsyncClientCall(stubs_[id], cqs_[id]);
 
         for (int i = 0; i < num_threads_; i++)
             polling_threads_[i].join();
@@ -147,7 +146,6 @@ public:
         while (cqs_[id]->Next(&tag, &ok))
         {
             AsyncClientCall *call = static_cast<AsyncClientCall *>(tag);
-
             // GPR_ASSERT(ok);
             if (GPR_UNLIKELY(!ok))
             {
@@ -212,7 +210,7 @@ private:
         ClientContext context;
         Status status;
         std::unique_ptr<ClientAsyncReaderWriter<Data, Ack>> stream;
-        int count;
+        long count;
         bool sendfinished;
         bool finished;
         bool writing;
