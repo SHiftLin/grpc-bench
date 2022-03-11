@@ -37,6 +37,8 @@ target_link_libraries(bm_grpc_proto
   ${_PROTOBUF_LIBPROTOBUF})
 
 foreach(_target
+  greeter_client
+  greeter_server
   grpc_bench_server
   grpc_latency_client 
   grpc_rpc_tput_client)
